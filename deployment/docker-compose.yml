@@ -1,0 +1,104 @@
+name: open-ecommerce
+
+services:
+  postgres-primary:
+    image: postgres:16
+    container_name: postgres-primary
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: masterdb
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - postgres-net
+    command: >
+      bash -c "mkdir -p /var/lib/postgresql/data &&
+      chown -R postgres:postgres /var/lib/postgresql/data &&
+      chmod 700 /var/lib/postgresql/data &&
+      su postgres -c 'echo \"host replication all 0.0.0.0/0 trust\" >> /var/lib/postgresql/data/pg_hba.conf' &&
+      su postgres -c 'echo \"wal_level = replica\" >> /var/lib/postgresql/data/postgresql.conf' &&
+      su postgres -c 'echo \"max_wal_senders = 10\" >> /var/lib/postgresql/data/postgresql.conf' &&
+      su postgres -c 'echo \"hot_standby = on\" >> /var/lib/postgresql/data/postgresql.conf' &&
+      exec su postgres -c 'postgres'"
+
+  postgres-replica:
+    image: postgres:16
+    container_name: postgres-replica
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: slavedb
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - pgdata_replica:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - postgres-net
+    depends_on:
+      - postgres-primary
+    command: >
+      bash -c "mkdir -p /var/lib/postgresql/data &&
+      chown -R postgres:postgres /var/lib/postgresql/data &&
+      chmod 700 /var/lib/postgresql/data &&
+      rm -rf /var/lib/postgresql/data/* &&
+      su postgres -c 'PGPASSWORD=postgres pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U postgres -Fp -Xs -R' &&
+      exec su postgres -c 'postgres'"
+
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    volumes:
+      - mongodata:/data/db
+    ports:
+      - "27017:27017"
+    networks:
+      - postgres-net
+
+  # Zookeeper
+  zookeeper:
+    image: confluentinc/cp-zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - kafka-net
+
+  kafka:
+    image: confluentinc/cp-kafka
+    container_name: kafka
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+    networks:
+      - kafka-net
+
+volumes:
+  pgdata:
+  pgdata_replica:
+  mongodata:
+
+networks:
+  postgres-net:
+  kafka-net:

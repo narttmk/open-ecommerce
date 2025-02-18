@@ -1,0 +1,41 @@
+_format_version: "3.0"
+services:
+  - name: kafka-login
+    url: http://kafka-rest-proxy:8082/topics/auth.login
+    routes:
+      - name: login
+        paths:
+          - /login
+        methods:
+          - POST
+    plugins:
+      - name: request-transformer
+        config:
+          http_method: POST
+          remove:
+            headers: ["host"]
+          add:
+            headers:
+              Content-Type: "application/vnd.kafka.json.v2+json"
+            body:
+              records: [{"value": "$request.body"}]
+
+  - name: kafka-register
+    url: http://kafka-rest-proxy:8082/topics/auth.register
+    routes:
+      - name: register
+        paths:
+          - /register
+        methods:
+          - POST
+    plugins:
+      - name: request-transformer
+        config:
+          http_method: POST
+          remove:
+            headers: ["host"]
+          add:
+            headers:
+              Content-Type: "application/vnd.kafka.json.v2+json"
+            body:
+              records: [{"value": "$request.body"}]
